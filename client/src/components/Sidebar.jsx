@@ -44,7 +44,7 @@ export default function Sidebar({ setCurrentRoom, currentRoom }) {
       </div>
 
       {/* Add New Room */}
-      <div className="mt-20 border-t pt-4" style={{ position: "sticky", bottom: 0, marginTop: "200px" }}>
+      <div className="mt-20 border-t pt-4">
         <input
           type="text"
           placeholder="Enter new room"

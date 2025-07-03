@@ -5,6 +5,7 @@ const path = require("path");
 const mongoose = require("mongoose");
 const http = require("http");
 const { Server } = require("socket.io");
+require("dotenv").config(); // Load environment variables
 
 const app = express();
 const server = http.createServer(app);
@@ -15,8 +16,8 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-mongoose.connect("mongodb://127.0.0.1:27017/chatdb");
+const connectDb = process.env.MONGODB_URI
+mongoose.connect(connectDb); // Connect to MongoDB Compass
 
 const MessageSchema = new mongoose.Schema({
   room: String,
@@ -35,7 +36,7 @@ const RoomSchema = new mongoose.Schema({
 const Message = mongoose.model("Message", MessageSchema);
 const Room = mongoose.model("Room", RoomSchema);
 
-let onlineUsers = [];
+let onlineUsers = {};
 
 const storage = multer.diskStorage({
   destination: "./uploads",
@@ -62,27 +63,43 @@ app.post("/rooms", async (req, res) => {
 
 io.on("connection", (socket) => {
   socket.on("user_connected", (username) => {
-    if (!onlineUsers.includes(username)) onlineUsers.push(username);
-    io.emit("update_online_users", onlineUsers);
+    onlineUsers[socket.id] = username; // Store by socket.id
+    io.emit("update_online_users", onlineUsers); // send full object
   });
 
+  // Join room & fetch messages
   socket.on("join_room", async (room) => {
     const msgs = await Message.find({ room });
     socket.join(room);
     socket.emit("previous_messages", msgs);
   });
 
+  // Send message
   socket.on("send_message", async (data) => {
     const newMsg = new Message(data);
     await newMsg.save();
-    io.to(data.room).emit("receive_message", data);
+    io.to(data.room).emit("receive_message", { ...data, _id: newMsg._id });
   });
 
+  // Delete message
+  socket.on("delete_message", async ({ messageId, room }) => {
+    try {
+      await Message.findByIdAndDelete(messageId);
+      io.to(room).emit("message_deleted", messageId);
+    } catch (err) {
+      console.error("Error deleting message:", err);
+    }
+  });
+
+  // When user disconnects
   socket.on("disconnect", () => {
-    // You can improve user removal logic using socket.id + user map
+    delete onlineUsers[socket.id];
+    io.emit("update_online_users", onlineUsers);
   });
 });
 
-server.listen(5000, () => {
-  console.log("Server running on http://localhost:5000");
+const PORT = process.env.PORT || 5001;
+server.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
+

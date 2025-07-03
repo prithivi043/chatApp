@@ -12,21 +12,39 @@ export default function ChatWindow({ currentRoom, username }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const bottomRef = useRef(null);
+  // Add inside your component (ChatWindow)
+  const deleteMessage = (messageId) => {
+    if (window.confirm("Are you sure you want to delete this message?")) {
+      socket.emit("delete_message", { messageId, room: currentRoom });
+      setMessages((prev) => prev.filter((msg) => msg._id !== messageId));
+    }
+  };
 
-  //  ONLINE USERS
+  // Listen for message deletion
+  useEffect(() => {
+    const deleteHandler = (deletedId) => {
+      setMessages((prev) => prev.filter((msg) => msg._id !== deletedId));
+    };
+    socket.on("message_deleted", deleteHandler);
+    return () => socket.off("message_deleted", deleteHandler);
+  }, []);
+
+
+  // USER CONNECT + ONLINE USERS FETCH
+
   useEffect(() => {
     if (username) {
       socket.emit("user_connected", username);
       socket.on("update_online_users", (users) => {
-        setOnlineUsers(users);
+        setOnlineUsers(users); // object: {socketId: username}
       });
     }
-    return () => {
-      socket.off("update_online_users");
-    };
+
+    return () => socket.off("update_online_users");
   }, [username]);
 
-  // ROOM JOIN + MESSAGES FETCH
+
+  // ROOM JOIN + MESSAGES FETCH 
   useEffect(() => {
     if (currentRoom) {
       socket.emit("join_room", currentRoom);
@@ -52,7 +70,7 @@ export default function ChatWindow({ currentRoom, username }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  //  SEND TEXT MESSAGE
+  //  SEND TEXT MESSAGE TO SERVER
   const sendMessage = () => {
     if (message.trim() && currentRoom) {
       const messageData = {
@@ -107,7 +125,7 @@ export default function ChatWindow({ currentRoom, username }) {
     }
   };
 
-  // ✅ EMOJI SELECT
+  //  EMOJI SELECT FUNCTION
   const onEmojiClick = (emojiData) => {
     setMessage((prev) => prev + emojiData.emoji);
   };
@@ -148,8 +166,8 @@ export default function ChatWindow({ currentRoom, username }) {
               <img
                 src={`https://api.dicebear.com/7.x/initials/svg?seed=${msg.username}`}
                 alt="avatar"
-                className="rounded-full px-2 mx-3"
-                style={{ height: "29px", width: "29px", minWidth: "16px", objectFit: "cover", borderRadius: "50%", margin: "0.5rem" }}
+                className="rounded-full mx-1 w-8 h-8"
+
               />
             )}
 
@@ -160,21 +178,19 @@ export default function ChatWindow({ currentRoom, username }) {
             >
               {/* Reply Preview */}
               {msg.replyTo && (
-                <div className="border-l-2 border-gray-400 pl-2 mb-1 text-xs italic text-gray-200">
+                <div className="border-l-2 border-gray-400 pl-2 mb-1 text-xs italic text-gray-900">
                   Reply to <strong>{msg.replyTo.username}:</strong>{" "}
                   {msg.replyTo.isFile ? msg.replyTo.fileName : msg.replyTo.text}
                 </div>
               )}
 
               {/* Online User Indicator */}
-              <div className="font-black flex items-center gap-1">
+              <div className="font-normal flex items-center gap-1">
                 {msg.username}
-                {
-                  onlineUsers.includes(msg.username) ? <span className="font-semibold ml-2 text-green-900">(online)</span> : " "
-                }
-                {/* {onlineUsers.includes(msg.username) && (
-                  <span className="text-green-900 font-extralight">(online)</span>
-                )} */}
+                {Object.values(onlineUsers || {}).includes(msg.username) && (
+                  <span className="text-green-500 text-xs ml-1">(online)</span>
+                )}
+
               </div>
 
               {msg.isFile ? (
@@ -188,9 +204,19 @@ export default function ChatWindow({ currentRoom, username }) {
               <div className="text-right text-xs text-gray-600 mt-1">{msg.time}</div>
             </div>
 
-            <div className="text-xs text-gray-400 mt-1">
-              <div className="cursor-pointer underline" onClick={() => setReplyTo(msg)} title="Reply">
-                ↩️ Reply
+            <div className="text-xs text-gray-900 mt-1">
+              <div className="cursor-pointer " onClick={() => setReplyTo(msg)} title="Reply">
+                <button className=" bg-sky-500 text-white px-1 ml-2 mb-1 py-1 rounded hover:bg-sky-600">
+                  ↩Reply
+                </button>
+              </div>
+              <div
+                className="cursor-pointer text-red-500 ml-2 underline"
+                onClick={() => deleteMessage(msg._id)}
+              >
+                <button className=" bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600">
+                  Delete
+                </button>
               </div>
             </div>
           </div>
@@ -227,9 +253,16 @@ export default function ChatWindow({ currentRoom, username }) {
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault(); // Prevent new line if using textarea
+                selectedFile ? sendFile() : sendMessage();
+              }
+            }}
             placeholder="Type a message..."
-            className="flex-1 px-3 py-2 rounded border border-gray-300 focus:outline-none"
+            className="flex-1 px-3 py-2 mb-0 rounded border border-gray-300 focus:outline-none"
           />
+
 
           <button
             onClick={selectedFile ? sendFile : sendMessage}
